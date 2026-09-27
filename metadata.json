@@ -1,0 +1,6 @@
+{
+  "name": "EventPulse PRO",
+  "description": "Executive event amplification workspace and real-time attendee LinkedIn post generator.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
