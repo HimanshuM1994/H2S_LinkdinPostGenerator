@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { ASSETS, DEFAULT_MEDIA_LIST } from '../data/mockData';
-import { generatePostCopy, GeneratedPostContent } from '../services/aiGenerator';
+import {
+  checkGeminiStatus,
+  generatePostCopy,
+  generatePostWithGemini,
+  GeneratedPostContent,
+} from '../services/aiGenerator';
 import { AttachedMedia, DeviceMode, EventConfig, ToneType } from '../types';
 
 interface AttendeeGeneratorProps {
@@ -27,16 +32,19 @@ export const AttendeeGenerator: React.FC<AttendeeGeneratorProps> = ({
   const [likeCount, setLikeCount] = useState(45);
   const [highlightCard, setHighlightCard] = useState(false);
   const [lastSaved, setLastSaved] = useState('Just now');
+  const [isGeminiReady, setIsGeminiReady] = useState(false);
+
+  // Check Gemini server configuration on mount
+  useEffect(() => {
+    checkGeminiStatus().then((status) => {
+      setIsGeminiReady(status.configured);
+    });
+  }, []);
 
   // Generated post content
   const [postContent, setPostContent] = useState<GeneratedPostContent>(() =>
     generatePostCopy('professional', takeaways, config)
   );
-
-  // Sync when tone or config changes
-  useEffect(() => {
-    setPostContent(generatePostCopy(tone, takeaways, config));
-  }, [tone, config]);
 
   const activeMedia = mediaList.find((m) => m.id === selectedMediaId) || mediaList[0];
 
@@ -54,27 +62,42 @@ export const AttendeeGenerator: React.FC<AttendeeGeneratorProps> = ({
     }
   };
 
-  const handleToneSelect = (newTone: ToneType) => {
+  const handleToneSelect = async (newTone: ToneType) => {
     setTone(newTone);
-    const updated = generatePostCopy(newTone, takeaways, config);
-    setPostContent(updated);
-    setHighlightCard(true);
-    setTimeout(() => setHighlightCard(false), 700);
-    onShowToast(`Adjusted post tone to ${newTone.toUpperCase()}`);
+    setIsGenerating(true);
+    try {
+      const updated = await generatePostWithGemini(newTone, takeaways, config);
+      setPostContent(updated);
+      setHighlightCard(true);
+      setTimeout(() => setHighlightCard(false), 700);
+      onShowToast(`Adjusted post tone to ${newTone.toUpperCase()}`);
+    } catch {
+      setPostContent(generatePostCopy(newTone, takeaways, config));
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     setIsGenerating(true);
-    setTimeout(() => {
-      const generated = generatePostCopy(tone, takeaways, config);
+    try {
+      const generated = await generatePostWithGemini(tone, takeaways, config);
       setPostContent(generated);
-      setIsGenerating(false);
       setLastSaved('Just now');
       setHighlightCard(true);
       setTimeout(() => setHighlightCard(false), 900);
-      onShowToast('✨ AI synthesized fresh LinkedIn draft tailored to your takeaways!');
+      if (generated.isLiveAI) {
+        onShowToast('✨ Gemini 3.8 Flash crafted a personalized LinkedIn draft!');
+      } else {
+        onShowToast('✨ Post draft synthesized with official summit tags!');
+      }
       if (onIncrementMetrics) onIncrementMetrics();
-    }, 750);
+    } catch (err) {
+      console.error(err);
+      onShowToast('✨ Generated post draft!');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -246,7 +269,7 @@ export const AttendeeGenerator: React.FC<AttendeeGeneratorProps> = ({
                   <h2 className="text-lg font-bold text-[#111c2d]">Draft Your LinkedIn Post</h2>
                   <span className="px-2.5 py-0.5 rounded-full bg-[#d6e3ff] text-[#004e99] text-[11px] font-bold flex items-center gap-1 border border-[#dee8ff]">
                     <span className="material-symbols-outlined text-[13px]">auto_awesome</span>
-                    AI Enhanced
+                    {postContent.isLiveAI || isGeminiReady ? 'Gemini 3.8 Flash' : 'AI Enhanced'}
                   </span>
                 </div>
                 <p className="text-xs text-[#64748b]">

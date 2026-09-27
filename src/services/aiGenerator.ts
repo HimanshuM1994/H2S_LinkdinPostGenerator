@@ -6,6 +6,7 @@ export interface GeneratedPostContent {
   closing: string;
   cta: string;
   hashtags: string[];
+  isLiveAI?: boolean;
 }
 
 export function generatePostCopy(
@@ -35,6 +36,7 @@ export function generatePostCopy(
         closing: `Conferences like this remind me why I love building developer communities and shaping tech ecosystems together.`,
         cta: `Drop a comment if you are on-site—would love to grab a coffee before the closing session! ☕`,
         hashtags: eventConfig.hashtags.slice(0, 5),
+        isLiveAI: false,
       };
 
     case 'takeaways':
@@ -51,6 +53,7 @@ export function generatePostCopy(
         closing: `Clear proof that cloud infrastructure architectures are evolving significantly faster than expected in 2025.`,
         cta: `Which of these shifts aligns closest with your 2026 tech roadmap? Let's discuss in the comments 👇`,
         hashtags: eventConfig.hashtags.slice(0, 5),
+        isLiveAI: false,
       };
 
     case 'casual':
@@ -66,6 +69,7 @@ export function generatePostCopy(
         closing: `The tech community here is fully back and firing on all cylinders. Huge kudos to ${orgName}!`,
         cta: `See everyone on the expo floor tomorrow morning! 👋`,
         hashtags: eventConfig.hashtags.slice(0, 5),
+        isLiveAI: false,
       };
 
     case 'professional':
@@ -83,6 +87,65 @@ export function generatePostCopy(
         closing: `Huge congratulations to the ${orgName} team for putting together a stellar summit. Honored to connect with so many brilliant minds in cloud engineering!`,
         cta: `Who else is attending tomorrow's breakout tracks? Let's connect! 👇`,
         hashtags: eventConfig.hashtags.slice(0, 5),
+        isLiveAI: false,
       };
   }
+}
+
+/**
+ * Checks server Gemini API configuration status.
+ */
+export async function checkGeminiStatus(): Promise<{ configured: boolean; model: string }> {
+  try {
+    const res = await fetch('/api/ai/status');
+    if (!res.ok) throw new Error('Status check failed');
+    return await res.json();
+  } catch {
+    return { configured: false, model: 'gemini-3.8-flash' };
+  }
+}
+
+/**
+ * Calls the server-side Gemini 3.8 Flash proxy endpoint to generate high-quality post copy.
+ * Falls back seamlessly to algorithmic drafting if the API key is not configured or network fails.
+ */
+export async function generatePostWithGemini(
+  tone: ToneType,
+  takeaways: string,
+  eventConfig: EventConfig
+): Promise<GeneratedPostContent> {
+  try {
+    const response = await fetch('/api/generate-post', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tone,
+        takeaways,
+        eventConfig,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success && data.data && data.data.intro) {
+        return {
+          intro: data.data.intro,
+          bulletPoints: Array.isArray(data.data.bulletPoints) ? data.data.bulletPoints : [],
+          closing: data.data.closing || '',
+          cta: data.data.cta || '',
+          hashtags: Array.isArray(data.data.hashtags) && data.data.hashtags.length > 0
+            ? data.data.hashtags
+            : eventConfig.hashtags.slice(0, 5),
+          isLiveAI: true,
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Server Gemini call failed, using high-quality local generation fallback:', err);
+  }
+
+  // Graceful fallback to rich local heuristic synthesis
+  return generatePostCopy(tone, takeaways, eventConfig);
 }
